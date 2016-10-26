@@ -6,7 +6,7 @@ import random
 import os.path
 
 # Data directory
-DEFAULT_DIR = '../../data/'
+DEFAULT_DIR = 'data/'
 
 
 class DataHandler(object):
