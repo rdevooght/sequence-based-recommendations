@@ -61,8 +61,61 @@ You can specify the order of columns with "tuxiy" where x and y are placeholder 
 ````
 python preprocess.py -f path/to/file --columns tuxi --min_user_activity 10
 ````
+
 ### train.py
 
+This script is used to train models and offers many options regarding when to save new models and when to stop training.
+The basic usage is the following:
+````
+python train.py -d path/to/dataset/ -m Method_name
+````
+
+The argument `-d` is used to specify the path to the folder that contains the "data", "models" and "results" subfolders created by preprocess.py. 
+If you have multiple datasets with a partly common path (e.g. path/to/dataset1/, path/to/dataset2/, etc.) you can specify this common path in the variable DEFAULT_DIR of helpers/data_handling.py. For example, setting DEFAULT_DIR = "path/to/" and using the argument `-d dataset1` will look for the dataset in "path/to/dataset1/".
+
+The optional arguments are the following:
+Option | Desciption
+------ | ----------
+`--dir dirname/` | Name of the subfolder of "path/to/dataset/models/" in which to save the model. By default it will be saved directly in the models/ folder, but using subfolders can be useful when many models are tested.
+`--progress {int or float}` | Number of iterations (or seconds) between two evaluations of the model on the validation set. When the model is evaluated, progress is shown on the command line, and the model might be saved (depending on the `--save` option). An float value means that the evaluations happen at geometric intervals (rather than linear). Default: 2.0
+`--save [All, Best, None]` | Policy for saving models. If "All", the current model is saved each time the model is evaluated on the validation set, and no model is destroyed. If "Best", the current model is only saved if it improves over the previous best results on the validation set, and the previous best model is deleted. If "None", no model is saved.
+`--time_based_progress` | Base the interval between two evaluations on the number of elapsed seconds rather than on the number of iterations.
+`--mpi value` | Max number of iterations (or seconds) between two evaluations (useful when using geometric intervals). Default: inf.
+`--max_iter value` | Max number of iterations (default: inf).
+`--max_time value` | Max training time in seconds (default: inf).
+`--min_iter value` | Min number of iterations before making the first evaluation (default: 0).
+`--extended_set | Use extended training set (contains first half of validation and test set). This is necessary for factorization based methods such as BPRMF and FPMC because they need to build a model for every user.
+`--tshuffle` | Shuffle the order of sequences between epochs.
+`--load_last_model` | Load Last model before starting training (it will search for a model build with all the same options and take the one with the largest number of epochs).
+`--es_m [WorstTimesX, StopAfterN, None]` | Early stopping method (by default none is used, and training continues until max_iter or max_time is reached). WorstTimesX will stop training if the number of iterations since the last best score on the validation set is longer than X times the longest time between two consecutive best scores. StopAfterN will stop the training if the model has not improved for the N last evaluations on the validation set.
+`--es_n'` | N parameter for StopAfterN (default: 5).
+`--es_x'` | X parameter for WorstTimesX (default: 2).
+`--es_min_wait'` | Mininum number of epochs before stopping (for WorstTimesX). Default: 1.
+`--es_LiB'` | Lower is better for validation score. By default a higher validation score is considered better, but if it is not the case you can use this option.
+
+The options specific to each method are explained in the Methods section.
+
 ### test.py
+
+This script test the models built with train.py on the test set.
+The basic usage is:
+````
+python test.py -d path/to/dataset/ -m Method_name
+````
+The argument `-d` works in the same way as with train.py, and the precise model to test is specified by the `--dir` option and the methods-specific options.
+If multiple models fit the options (They are in the same subfolder and were trained with the same method and same options), they are all evaluated one after the other, except if the argument `-i epoch_number` is also specified, which will then select the model based on the number of epochs.
+
+When the `--save` option is used, the results are saved in a file in "path/to/dataset/results/".
+the results of each model form a line of the file, and the following metrics are saved (in this order):
+1. Number of epochs
+2. precision
+3. sps
+4. user coverage
+7. Number of distinct items correctly recommended
+10. recall
+11. NDCG
+12. Percentage of correct recommendations among the 1% most popular items
+
+All the metrics are computed "@k", with k=10 by default. k can be changed using the `-k` option.
 
 ## Methods
