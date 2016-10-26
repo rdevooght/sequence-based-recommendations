@@ -92,13 +92,15 @@ def print_results(ev, plot=True, file=None, n_batches=None, print_full_rank_comp
 		if not os.path.exists(os.path.dirname(file)):
 			os.makedirs(os.path.dirname(file))
 		with open(file, "a") as f:
-			f.write("\t".join(map(str, [n_batches, ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), goalDistrib.number_of_movies(), predictionsDistrib.number_of_movies(), successDistrib.number_of_movies(), strictGoalDistrib.number_of_movies(), strictSuccessDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.average_novelty(), ev.success_in_top_items()])) + "\n")
+			f.write("\t".join(map(str, [n_batches, ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), successDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.success_in_top_items()])) + "\n")
+			# f.write("\t".join(map(str, [n_batches, ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), goalDistrib.number_of_movies(), predictionsDistrib.number_of_movies(), successDistrib.number_of_movies(), strictGoalDistrib.number_of_movies(), strictSuccessDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.average_novelty(), ev.success_in_top_items()])) + "\n")
 		if print_full_rank_comparison:
 			with open(file+"_full_rank", "a") as f:
 				for data in ev.get_rank_comparison():
 					f.write("\t".join(map(str, data)) + "\n")
 	else:
-		print("\t".join(map(str, ['-', ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), goalDistrib.number_of_movies(), predictionsDistrib.number_of_movies(), successDistrib.number_of_movies(), strictGoalDistrib.number_of_movies(), strictSuccessDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.average_novelty(), ev.success_in_top_items()])), file=sys.stderr)
+		print("\t".join(map(str, ['-', ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), successDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.success_in_top_items()])), file=sys.stderr)
+		# print("\t".join(map(str, ['-', ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), goalDistrib.number_of_movies(), predictionsDistrib.number_of_movies(), successDistrib.number_of_movies(), strictGoalDistrib.number_of_movies(), strictSuccessDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.average_novelty(), ev.success_in_top_items()])), file=sys.stderr)
 		if print_full_rank_comparison:
 			with open(file+"_full_rank", "a") as f:
 				for data in ev.get_rank_comparison():
@@ -124,7 +126,7 @@ def get_last_tested_batch(filename):
 def test_command_parser(parser):
 	
 	parser.add_argument('-d', dest='dataset', help='Directory name of the dataset.', default='', type=str)
-	parser.add_argument('-i', dest='number_of_batches', help='Number of batches, if not set it will compare all the available models', default=-1, type=int)
+	parser.add_argument('-i', dest='number_of_batches', help='Number of epochs, if not set it will compare all the available models', default=-1, type=int)
 	parser.add_argument('-k', dest='nb_of_predictions', help='Number of predictions to make. It is the "k" in "prec@k", "rec@k", etc.', default=10, type=int)
 	parser.add_argument('--save', help='Save results to a file', action='store_true')
 	parser.add_argument('--dir', help='Model directory.', default="", type=str)
