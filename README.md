@@ -108,6 +108,7 @@ If multiple models fit the options (They are in the same subfolder and were trai
 
 When the `--save` option is used, the results are saved in a file in "path/to/dataset/results/".
 the results of each model form a line of the file, and the following metrics are saved (in this order):
+
 1. Number of epochs
 2. precision
 3. sps
