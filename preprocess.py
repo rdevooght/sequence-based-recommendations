@@ -11,12 +11,12 @@ from shutil import copyfile
 def command_parser():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-f', dest='filename', help='Input file', required=True, type=str)
-	parser.add_argument('--columns', help='Order of the columns in the file (eg: "uirt"), u for user, i for item, t for timestamp, r for rating. If r is not present a default rating of 0 is given to all interaction. If t is not present interactions are assumed to be in chronological order. Extra columns are ignored', default="uit", type=str)
-	parser.add_argument('--sep', help='Separator between the column. If unspecified panda will try to guess the separator', default="\s+", type=str)
-	parser.add_argument('--min_user_activity', help='Users with less interactions than this will be removed from the dataset', default=2, type=int)
-	parser.add_argument('--min_item_pop', help='Items with less interactions than this will be removed from the dataset', default=5, type=int)
-	parser.add_argument('--val_size', help='Number of users to put in the validation set. If in (0,1) it will be interpreted as the fraction of total number of users.', default=0.1, type=float)
-	parser.add_argument('--test_size', help='Number of users to put in the test set. If in (0,1) it will be interpreted as the fraction of total number of users.', default=0.1, type=float)
+	parser.add_argument('--columns', help='Order of the columns in the file (eg: "uirt"), u for user, i for item, t for timestamp, r for rating. If r is not present a default rating of 1 is given to all interaction. If t is not present interactions are assumed to be in chronological order. Extra columns are ignored. Default: uit', default="uit", type=str)
+	parser.add_argument('--sep', help='Separator between the column. If unspecified pandas will try to guess the separator', default="\s+", type=str)
+	parser.add_argument('--min_user_activity', help='Users with less interactions than this will be removed from the dataset. Default: 2', default=2, type=int)
+	parser.add_argument('--min_item_pop', help='Items with less interactions than this will be removed from the dataset. Default: 5', default=5, type=int)
+	parser.add_argument('--val_size', help='Number of users to put in the validation set. If in (0,1) it will be interpreted as the fraction of total number of users. Default: 0.1', default=0.1, type=float)
+	parser.add_argument('--test_size', help='Number of users to put in the test set. If in (0,1) it will be interpreted as the fraction of total number of users. Default: 0.1', default=0.1, type=float)
 	parser.add_argument('--seed', help='Seed for the random train/val/test split', default=1, type=int)
 
 	args = parser.parse_args()
@@ -51,7 +51,7 @@ def load_data(filename, columns, separator):
 
 	if 'r' not in columns:
 		# Add a column of default ratings
-		data['r'] = 0
+		data['r'] = 1
 
 	if 't' in columns:
 		# sort according to the timestamp column
@@ -91,8 +91,7 @@ def save_index_mapping(data, separator, dirname):
 	NB: some users and items might have been removed in previous steps and will therefore not appear in the mapping.
 	'''
 	
-	if separator == "\s+":
-		separator = "\t"
+	separator = "\t"
 
 
 	# Pandas categorical type will create the numerical ids we want
