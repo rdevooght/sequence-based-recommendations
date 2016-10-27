@@ -13,7 +13,7 @@ Gensim and pandas are easily installed with pip. Lasagne is also installed with 
 On Ubuntu, the following commands should install everything that you need:
 ````
 sudo apt-get install python-numpy python-scipy python-dev python-pip python-nose g++ libopenblas-dev git
-sudo pip install Theano pandas gensim Lasagne>=0.2.dev1
+sudo pip install Theano pandas gensim https://github.com/Lasagne/Lasagne/archive/master.zip
 ````
 
 ## Usage
@@ -84,14 +84,14 @@ Option | Desciption
 `--max_iter value` | Max number of iterations (default: inf).
 `--max_time value` | Max training time in seconds (default: inf).
 `--min_iter value` | Min number of iterations before making the first evaluation (default: 0).
-`--extended_set | Use extended training set (contains first half of validation and test set). This is necessary for factorization based methods such as BPRMF and FPMC because they need to build a model for every user.
+`--extended_set` | Use extended training set (contains first half of validation and test set). This is necessary for factorization based methods such as BPRMF and FPMC because they need to build a model for every user.
 `--tshuffle` | Shuffle the order of sequences between epochs.
 `--load_last_model` | Load Last model before starting training (it will search for a model build with all the same options and take the one with the largest number of epochs).
 `--es_m [WorstTimesX, StopAfterN, None]` | Early stopping method (by default none is used, and training continues until max_iter or max_time is reached). WorstTimesX will stop training if the number of iterations since the last best score on the validation set is longer than X times the longest time between two consecutive best scores. StopAfterN will stop the training if the model has not improved for the N last evaluations on the validation set.
-`--es_n'` | N parameter for StopAfterN (default: 5).
-`--es_x'` | X parameter for WorstTimesX (default: 2).
-`--es_min_wait'` | Mininum number of epochs before stopping (for WorstTimesX). Default: 1.
-`--es_LiB'` | Lower is better for validation score. By default a higher validation score is considered better, but if it is not the case you can use this option.
+`--es_n N` | N parameter for StopAfterN (default: 5).
+`--es_x X` | X parameter for WorstTimesX (default: 2).
+`--es_min_wait num_epochs` | Mininum number of epochs before stopping (for WorstTimesX). Default: 1.
+`--es_LiB` | Lower is better for validation score. By default a higher validation score is considered better, but if it is not the case you can use this option.
 
 The options specific to each method are explained in the Methods section.
 
@@ -119,3 +119,74 @@ the results of each model form a line of the file, and the following metrics are
 All the metrics are computed "@k", with k=10 by default. k can be changed using the `-k` option.
 
 ## Methods
+
+### Neural Networks
+#### Recurrent neural networks
+
+Use it with `-m RNN`.
+The RNN have many options allowing to change the type/size/number of layers, the training procedure and the objective function, and some options are specific to a particular objective function.
+
+##### Layers
+
+Option | Desciption
+------ | ----------
+`--r_t [LSTM, GRU]` | Type of recurrent layer (default is GRU)
+`--r_l size_of_layer1-size_of_layer2-etc.` | Size and number of layers. for example, `--r_l 100-50-50` creates a layer with 50 hidden neurons on top of another layer with 50 hidden neurons on top of a layer with 100 hidden neurons. Default: 32.
+`--r_bi` | Use bidirectional layers.
+
+##### Update mechanism
+
+Option | Desciption
+------ | ----------
+`--u_m [adagrad, adadelta, rmsprop, nesterov, adam]` | Update mechanism (see [Lasagne doc](http://lasagne.readthedocs.io/en/latest/modules/updates.html)). Default is adagrad
+`--u_l float` | Learning rate (default: 0.1).
+`--u_rho float` | rho parameter for Adadelta and RMSProp, or momentum for Nesterov momentum (default: 0.9).
+`--u_b1 float` | Beta 1 parameter for Adam (default: 0.9).
+`--u_b2 float` | Beta 2 parameter for Adam (default: 0.999).
+
+##### Noise
+
+Option | Desciption
+------ | ----------
+`--n_dropout P` | Dropout probability (default: 0.)
+`--n_shuf P` | Probability that an item is swapped with another one (default: 0.).
+`--n_shuf_std STD` | If an item is swapped, the position of the other item is drawn from a normal distribution whose std is defined by this parameter (default: 5.).
+
+##### Other options
+
+Option | Desciption
+------ | ----------
+`-b int` | Size of the mini-batchs (default: 16)
+`--max_length int` | Maximum length of sequences (default: 200)
+`-g val` | Gradient clipping (default: 100)
+`--repeated_interactions` | Use when a user can interact multiple times with the same item. If not set, the items that the user already saw are never recommended.
+
+##### Objective functions
+
+Option | Desciption
+------ | ----------
+`--loss [CCE, Blackout, TOP1, BPR, hinge, logit, logsig]` | Objective function. CCE is the categorical cross-entropy, BPR, TOP1 and Blackout are based on sampling, and hinge, logit and logsig allow to have multiple targets. Default is CCE.
+`-r float` | *Only for CCE*. Add a regularization term. A positive value will use L2 regularization and a negative value will use L1. Default: 0.
+`--db float` | *Only for CCE, Blackout, BPR and TOP1*. Increase the diversity bias to put more pressure on learning correct recomendations for unfrequent items (default: 0.).
+`--sampling float or int` | *Only for Blackout, BPR and TOP1*. Number of items to sample in the error computation. Use a float in [0,1] to express it as a fraction of the number of items in the catalog, or an int > 0 to specify the number of samples directly. Default: 32.
+`--n_targets N` | *Only for hinge, logit and logsig*. Number of items in the sequence that are used as targets. Default: 1.
+
+
+#### Stacked denoising auto-encoders
+
+Use it with `-m SDAE`.
+SDAE the RNN options described in "[Update mechanism](#update-mechanism)" and "[Other options](#other-options)".
+
+Option | Desciption
+------ | ----------
+`--L size_of_layer1-size_of_layer2-etc.` | Size and number of layers. for example, `--r_l 50-32-50` creates a layer with 50 hidden neurons on top of another layer with 32 hidden neurons on top of a layer with 50 hidden neurons. Default: 20.
+`--in_do float` | Dropout rate applied to the input layer of the SDAE (default: 0.2).
+`--do float` | Dropout rate applied to the hidden layers of the SDAE (default: 0.5).
+
+### Factorization-based
+#### FPMC
+#### BPR-MF
+### Lazy
+#### POP
+#### Markov Chain
+#### User KNN
