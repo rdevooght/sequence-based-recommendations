@@ -5,7 +5,7 @@ def sequence_noise_command_parser(parser):
 	parser.add_argument('--n_dropout', help='Dropout probability', default=0., type=float)
 	parser.add_argument('--n_swap', help="Probability of swapping two consecutive items", default=0., type=float)
 	parser.add_argument('--n_shuf', help="Probability of swapping two random items", default=0., type=float)
-	parser.add_argument('--n_shuf_std', help="The distance between the two items to be swapped is drown from a normal distribution whose std is defined by this parameter", default=5., type=float)
+	parser.add_argument('--n_shuf_std', help="The distance between the two items to be swapped is drawn from a normal distribution whose std is defined by this parameter", default=5., type=float)
 	parser.add_argument('--n_ratings', help='Probability of changing the rating.', default=0., type=float)
 
 def get_sequence_noise(args):

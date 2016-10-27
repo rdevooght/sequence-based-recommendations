@@ -39,6 +39,7 @@ def predictor_command_parser(parser):
 	parser.add_argument('--loss', help='Loss function, choose between TOP1, BPR and Blackout (Sampling), or hinge, logit and logsig (multi-targets), or CCE (Categorical cross-entropy)', default='CCE', type=str)
 	parser.add_argument('--sampling', help='Number of sample for the computation of the loss in RNNSampling', default=32.0, type=float)
 	parser.add_argument('--db', dest='diversity_bias', help='Diversity bias (for RNN with CCE, TOP1, BPR or Blackout loss)', default=0.0, type=float)
+	parser.add_argument('--in_do', dest='input_dropout', help='Input dropout (for SDA)', default=0.2, type=float)
 	parser.add_argument('--do', dest='dropout', help='Dropout (for SDA)', default=0.5, type=float)
 	parser.add_argument('--rf', help='Use rating features.', action='store_true')
 	parser.add_argument('--mf', help='Use movie features.', action='store_true')
@@ -96,7 +97,7 @@ def get_predictor(args):
 		else:
 			raise ValueError('Unknown loss for the RNN model')
 	elif args.method == "SDA":
-		return StackedDenoisingAutoencoder(interactions_are_unique=(not args.repeated_interactions), layers = args.layers, dropout=args.dropout, updater=updater, batch_size=args.batch_size, use_ratings_features=args.rf)
+		return StackedDenoisingAutoencoder(interactions_are_unique=(not args.repeated_interactions), layers = args.layers, input_dropout=args.input_dropout, dropout=args.dropout, updater=updater, batch_size=args.batch_size, use_ratings_features=args.rf)
 
 
 	
