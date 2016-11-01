@@ -187,8 +187,58 @@ Option | Desciption
 
 ### Factorization-based
 #### FPMC
+
+FPMC is a method combining factorized markov chains with the factorization of the user-item matrix (see "Factorizing personalized Markov chains for next-basket recommendation" by Rendlr et al. in *Proceedings of WWW10*).
+Use it with `-m FPMC`
+
+Option | Desciption
+------ | ----------
+`--k_cf int` | Rank of the user-item matrix factorization (default: 32).
+`--k_mc int` | Rank of the factorized Markov chain (default: 32).
+`-l val` | Learning rate (default: 0.01).
+`--cooling val` | Multiplicative factor applied to the learning rate after each epoch (default: 1)
+`--init_sigma val` | Standard deviation of the gaussian initialization (default: 1).
+`--fpmc_bias val` | Sampling bias (default: 100). By default the SGD process uses adaptive sampling to speed up learning. This parameter is used to control how much the sampling is biased towards high error items.
+`--no_adaptive_sampling` | No adaptive sampling
+`-r float` | Add a regularization term. A positive value will use L2 regularization and a negative value will use L1. Default: 0.
+
 #### BPR-MF
+
+BPR-MF is a matrix factorization method based on the BPR loss (see "BPR: Bayesian personalized ranking from implicit feedback" by Rendle et al. in *Proceedings of the twenty-fifth conference on uncertainty in artificial intelligence*)
+Use it with `-m BPRMF`
+
+Option | Desciption
+------ | ----------
+`-H int` | Rank of the user-item matrix factorization (default: 20).
+`-l val` | Learning rate (default: 0.01).
+`--cooling val` | Multiplicative factor applied to the learning rate after each epoch (default: 1)
+`--init_sigma val` | Standard deviation of the gaussian initialization (default: 1).
+`--fpmc_bias val` | Sampling bias (default: 100). By default the SGD process uses adaptive sampling to speed up learning. This parameter is used to control how much the sampling is biased towards high error items.
+`--no_adaptive_sampling` | No adaptive sampling
+`-r float` | Add a regularization term. A positive value will use L2 regularization and a negative value will use L1. Default: 0.
+
 ### Lazy
+
+Lazy methods do not build models, they make recommendation directly based on the dataset.
+They should therefor not be used with `train.py`, but only with `test.py`.
+
 #### POP
+
+Use it with `-m POP`.
+Always predict the most popular items.
+
 #### Markov Chain
+
+Use it with `-m MM`.
+Recommends the items that follow most often the last item the user's sequence.
+
 #### User KNN
+
+Use it with `-m UKNN`.
+User-based nearest neighbors approach. 
+The similarity measure between users is the cosine similarity: #number-of-common-items / sqrt(#number-of-items-of-user-a * #number-of-items-of-user-b).
+
+Option | Desciption
+------ | ----------
+`--ns int` | Neighborhood size (default: 80).
+	
