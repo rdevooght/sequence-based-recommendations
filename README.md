@@ -4,6 +4,20 @@ Some standard algorithms that do not use sequence information are also present f
 
 All those algorithms aims to solve the "item recommendation" or "top-N recommendation" problem, which mean that they are not designed to predict ratings values, but only to predict which items are of interest for a given user.
 
+Our code was used to produce the experiments in "[Collaborative Filtering with Recurrent Neural Networks](https://arxiv.org/abs/1608.07400)". 
+If you use this code in your research, please cite us:
+````
+@article{CFwRNN,
+  author    = {Robin Devooght and
+               Hugues Bersini},
+  title     = {Collaborative Filtering with Recurrent Neural Networks},
+  journal   = {CoRR},
+  volume    = {abs/1608.07400},
+  year      = {2016},
+  url       = {http://arxiv.org/abs/1608.07400},
+}
+````
+
 ## Installation
 The library has many dependencies: numpy/scipy, theano and lasagne for the neural networks, Gensim for word2vec and pandas for the data manipulation.
 
@@ -184,6 +198,21 @@ Option | Desciption
 `--L size_of_layer1-size_of_layer2-etc.` | Size and number of layers. for example, `--r_l 50-32-50` creates a layer with 50 hidden neurons on top of another layer with 32 hidden neurons on top of a layer with 50 hidden neurons. Default: 20.
 `--in_do float` | Dropout rate applied to the input layer of the SDAE (default: 0.2).
 `--do float` | Dropout rate applied to the hidden layers of the SDAE (default: 0.5).
+
+#### Latent trajectory modeling
+
+Use it with `-m  LTM`.
+LTM is a method based on word2vec, described in "[Latent Trajectory Modeling: A Light and Efficient Way to Introduce Time in Recommender Systems](http://dl.acm.org/citation.cfm?id=2799676)".
+LTM works in two steps: it first produces an embedding of the items with the word2vec algorithm using the sequence of items in the training set, then it estimates for each user a translation vector that would best explain the trajectory of that user in the embedded space.
+Predictions are made by finding the closest items to the last user item translated by the user's translation vector.
+Our implementation is mainly a wrapper around [Gensim's word2vec implementation](https://radimrehurek.com/gensim/models/word2vec.html).
+
+Option | Desciption
+------ | ----------
+`-H int` | Number of neurons (default: 20).
+`--ltm_window int` | Size of word2vec's window (default: 5).
+`--ltm_damping float` | Temporal damping (default: 0.8).
+`--ltm_no_trajectory` | Use this option to make predictions directly with word2vec, without the trajectory estimation proposed in the LTM paper.
 
 ### Factorization-based
 #### FPMC
