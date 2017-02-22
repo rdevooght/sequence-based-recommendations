@@ -122,7 +122,7 @@ def test_command_parser(parser):
 	parser.add_argument('-d', dest='dataset', help='Directory name of the dataset.', default='', type=str)
 	parser.add_argument('-i', dest='number_of_batches', help='Number of epochs, if not set it will compare all the available models', default=-1, type=int)
 	parser.add_argument('-k', dest='nb_of_predictions', help='Number of predictions to make. It is the "k" in "prec@k", "rec@k", etc.', default=10, type=int)
-	parser.add_argument('--metrics', help='List of metrics to compute, comma separated', default='sps,recall,item_coverage,user_coverage,blockbuster_share,assr', type=str)
+	parser.add_argument('--metrics', help='List of metrics to compute, comma separated', default='sps,recall,item_coverage,user_coverage,blockbuster_share', type=str)
 	parser.add_argument('--save', help='Save results to a file', action='store_true')
 	parser.add_argument('--dir', help='Model directory.', default="", type=str)
 	parser.add_argument('--save_rank', help='Save the full comparison of goal and prediction ranking.', action='store_true')

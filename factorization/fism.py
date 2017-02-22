@@ -21,7 +21,7 @@ class FISM(MFBase):
 		self.name = 'FISM'
 		self.k = k
 		self.loss = loss
-		if loss not in ['rmse', 'auc']:
+		if loss not in ['RMSE', 'BPR']:
 			raise ValueError('Unknown loss for FISM: ', loss)
 		self.alpha = alpha
 
@@ -144,7 +144,7 @@ class FISM(MFBase):
 		return list(np.argpartition(-output, range(k))[:k])
 
 	def training_step(self, iterations):
-		if self.loss == "auc":
+		if self.loss == "BPR":
 			return self.auc_sgd_step(*self.get_auc_training_sample())
 		else: 
 			return self.rmse_sgd_step(*self.get_rmse_training_sample())
