@@ -94,9 +94,10 @@ class RNNMargin(rnn.RNNBase):
 		# l_last_slice = lasagne.layers.SliceLayer(l_recurrent, -1, 1)
 
 		# Theano tensor for the targets
-		self.target = T.fmatrix('multiple_target_output')
-		self.target_weight = T.fmatrix('target_weight')
+		target = T.fmatrix('multiple_target_output')
+		target_weight = T.fmatrix('target_weight')
 		self.exclude = T.fmatrix('excluded_items')
+		self.theano_inputs = [self.l_in.input_var, self.l_mask.input_var, target, target_weight, self.exclude]
 		
 		# The sliced output is then passed through linear layer to obtain the right output size
 		self.l_out = lasagne.layers.DenseLayer(l_last_slice, num_units=self.n_items, nonlinearity=None)
@@ -105,54 +106,8 @@ class RNNMargin(rnn.RNNBase):
 		network_output = lasagne.layers.get_output(self.l_out)
 
 		# loss function
-		self.cost = self.loss_function(network_output, self.target, self.target_weight).mean()
+		self.cost = self.loss_function(network_output, target, target_weight).mean()
 		
-
-	def _compile_train_function(self):
-		''' Compile self.train. 
-		self.train recieves a sequence and a target for every steps of the sequence, 
-		compute error on every steps, update parameter and return global cost (i.e. the error).
-		'''
-		print("Compiling train...")
-		# Compute AdaGrad updates for training
-		all_params = lasagne.layers.get_all_params(self.l_out, trainable=True)
-		updates = self.updater(self.cost, all_params)
-		# Compile network
-		self.train_function = theano.function([self.l_in.input_var, self.l_mask.input_var, self.target, self.target_weight, self.exclude], self.cost, updates=updates, allow_input_downcast=True, name="Train_function", on_unused_input='ignore')
-		print("Compilation done.")
-
-	def _compile_predict_function(self):
-		''' Compile self.predict, the deterministic rnn that output the prediction at the end of the sequence
-		'''
-		print("Compiling predict...")
-		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
-		self.predict_function = theano.function([self.l_in.input_var, self.l_mask.input_var], deterministic_output, allow_input_downcast=True, name="Predict_function")
-		print("Compilation done.")
-
-	def _compile_test_function(self):
-		''' Compile self.test_function, the deterministic rnn that output the precision@10
-		'''
-		print("Compiling test...")
-		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
-		if self.interactions_are_unique:
-			deterministic_output *= (1 - self.exclude)
-		theano_test_function = theano.function([self.l_in.input_var, self.l_mask.input_var, self.target, self.target_weight, self.exclude], deterministic_output, allow_input_downcast=True, name="Test_function", on_unused_input='ignore')
-		
-		def precision_test_function(input_var, mask, target, target_weight, exclude):
-			k = 10
-			output = theano_test_function(input_var, mask, target, target_weight, exclude)
-			ids = np.argpartition(-output, range(k), axis=-1)[:, :k]
-			rows = np.array(range(output.shape[0]))
-			pred = target[rows[:,np.newaxis], ids]
-			score = pred[pred >= 1].sum() / output.shape[0]
-			if score > 10:
-				raise ValueError()
-			return score
-
-		self.test_function = precision_test_function
-
-
-		print("Compilation done.")
 
 	def _prepare_input(self, sequences):
 		''' Sequences is a list of [user_id, input_sequence, targets]

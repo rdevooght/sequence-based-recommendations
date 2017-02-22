@@ -94,21 +94,9 @@ class StackedDenoisingAutoencoder(RNNBase):
 
 		# loss function
 		self.targets = T.fmatrix('multiple_target_output')
+		self.theano_inputs = [self.l_in.input_var, self.targets]
 
 		self.cost = T.sqr(network_output - self.targets).mean()
-
-	def _compile_train_function(self):
-		''' Compile self.train. 
-		self.train recieves a sequence and a target for every steps of the sequence, 
-		compute error on every steps, update parameter and return global cost (i.e. the error).
-		'''
-		print("Compiling...")
-		# Compute AdaGrad updates for training
-		all_params = lasagne.layers.get_all_params(self.l_out, trainable=True)
-		updates = self.updater(self.cost, all_params)
-		# Compile network
-		self.train_function = theano.function([self.l_in.input_var, self.targets], self.cost, updates=updates, allow_input_downcast=True)
-		print("Compilation done.")
 
 	def _compile_predict_function(self):
 		''' Compile self.predict, the deterministic rnn that output the prediction at the end of the sequence
@@ -125,9 +113,15 @@ class StackedDenoisingAutoencoder(RNNBase):
 		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
 		if self.interactions_are_unique:
 			deterministic_output *= (1 - self.l_in.input_var)
-		cost = lasagne.objectives.categorical_accuracy(deterministic_output,self.targets, top_k=10).mean()
-		self.test_function = theano.function([self.l_in.input_var, self.targets], cost, allow_input_downcast=True, name="Test_function")
-		print("Compilation done.")
+		theano_test_function = theano.function(self.theano_inputs, deterministic_output, allow_input_downcast=True, name="Test_function", on_unused_input='ignore')
+		
+		def test_function(theano_inputs, k=10):
+			output = theano_test_function(*theano_inputs)
+			ids = np.argpartition(-output, range(k), axis=-1)[0, :k]
+			
+			return ids
+
+		self.test_function = test_function
 
 	def _gen_mini_batch(self, sequence_generator, test=False, **kwargs):
 		''' Takes a sequence generator and produce a mini batch generator.
@@ -148,11 +142,11 @@ class StackedDenoisingAutoencoder(RNNBase):
 				if not test:
 					X[j,:] = self._one_hot_encoding([i[0] for i in sequence if (np.random.random() >= self.input_dropout)])
 					Y[j, :] = self._one_hot_encoding([i[0] for i in sequence])
+					yield (X.astype(theano.config.floatX),Y.astype(theano.config.floatX))
 				else:
 					X[j, :] = self._one_hot_encoding([i[0] for i in sequence[:len(sequence)/2]])
 					Y[j, :] = self._one_hot_encoding(sequence[len(sequence)/2][0])
-
-			yield (X.astype(theano.config.floatX),Y.astype(theano.config.floatX))
+					yield (X.astype(theano.config.floatX),Y.astype(theano.config.floatX)), [i[0] for i in sequence[len(sequence)/2:]]
 
 	def _one_hot_encoding(self, ids):
 		ohe = np.zeros(self._input_size())

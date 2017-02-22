@@ -9,6 +9,8 @@ import glob
 import sys
 from time import time
 from gensim.models.word2vec import Word2Vec 
+from helpers import evaluation
+
 
 class LTM(object):
 	""" Implementation of the algorithm proposed in "Latent Trajectory Modeling : A Light and Efficient Way to Introduce Time in Recommender Systems" by Guardia-Sebaoun, E. et al., 2015.
@@ -39,6 +41,14 @@ class LTM(object):
 
 		self.name = 'Latent Trajectory Modeling'
 		self.max_length = np.inf # For compatibility with the RNNs
+
+		self.metrics = {'recall': {'direction': 1},
+			'sps': {'direction': 1},
+			'user_coverage' : {'direction': 1},
+			'item_coverage' : {'direction': 1},
+			'ndcg' : {'direction': 1},
+			'blockbuster_share' : {'direction': -1}
+		}
 
 
 	def _get_model_filename(self, epochs):
@@ -99,6 +109,9 @@ class LTM(object):
 		for sequence, user_id in dataset.training_set(epochs=1):
 			yield [str(i[0]) for i in sequence]
 
+	def set_dataset(self, dataset):
+		self.dataset = dataset
+
 	def train(self, dataset, 
 		max_time=np.inf, 
 		progress=2.0, 
@@ -109,7 +122,8 @@ class LTM(object):
 		max_iter=np.inf, 
 		max_progress_interval=np.inf,
 		load_last_model=False,
-		early_stopping=None):
+		early_stopping=None,
+		validation_metrics=['sps']):
 		'''Train the model based on the sequence given by the training_set
 
 		!!!! Contrary to what the train function of other algorithms, here an iteration is equivalent to one epoch !!!!!!!
@@ -140,6 +154,11 @@ class LTM(object):
 		early_stopping : should be a callable that will recieve the list of validation error and the corresponding epochs and return a boolean indicating whether the learning should stop.
 		'''
 
+		self.set_dataset(dataset)
+		
+		if len(set(validation_metrics) & set(self.metrics.keys())) < len(validation_metrics):
+			raise ValueError('Incorrect validation metrics. Metrics must be chosen among: ' + ', '.join(self.metrics.keys()))
+
 		# Load last model if needed, else initialise the model
 		iterations = 0
 		epochs_offset = 0
@@ -149,12 +168,12 @@ class LTM(object):
 			self.w2v_model = Word2Vec(iter = 1, min_count = 1, size=self.k, window=self.window, alpha=self.learning_rate, sg=0)
 			self.w2v_model.build_vocab([map(str, range(dataset.n_items))])
 
-		# raise ValueError
-
 		start_time = time()
 		next_save = int(progress)
-		val_costs = []
 		epochs = []
+		metrics = {name:[] for name in self.metrics.keys()}
+		filename = {}
+
 		while (time() - start_time < max_time and iterations < max_iter):
 
 			# Train one epoch
@@ -176,39 +195,33 @@ class LTM(object):
 					epochs.append(epochs_offset + iterations)
 
 					# Compute validation cost
-					costs = []
-					for sequence, user_id in dataset.validation_set(epochs=1):
-						top_k = self.top_k_recommendations(sequence[:len(sequence)//2], user_id=user_id)
-						costs.append(int(sequence[len(sequence)//2][0] in top_k))
-						# print('---------------')
-						# print(top_k)
-						# print(sequence[len(sequence)//2][0])
+					metrics = self._compute_validation_metrics(metrics)
 						
-					last_cost = np.mean(costs)
-					val_costs.append(last_cost)
-
 					# Print info
-					self._print_progress(iterations, epochs[-1], start_time, val_costs)
+					self._print_progress(iterations, epochs[-1], start_time, metrics, validation_metrics)
 
 					# Save model
+					run_nb = len(metrics[self.metrics.keys()[0]])-1
 					if autosave == 'All':
-						filename = save_dir + self._get_model_filename(round(epochs[-1], 3))
-						self.save(filename)
+						filename[run_nb] = save_dir + self._get_model_filename(round(epochs[-1], 3))
+						self.save(filename[run_nb])
 					elif autosave == 'Best':
-						if len(val_costs) == 1:
-							filename = save_dir + self._get_model_filename(round(epochs[-1], 3))
-							self.save(filename)
-						elif val_costs[-1] > max(val_costs[:-1]):
-							try:
-								os.remove(filename)
-							except OSError:
-								print('Warning : Previous model could not be deleted')
-							filename = save_dir + self._get_model_filename(round(epochs[-1], 3))
-							self.save(filename)
+						pareto_runs = self.get_pareto_front(metrics, validation_metrics)
+						if run_nb in pareto_runs:
+							filename[run_nb] = save_dir + self._get_model_filename(round(epochs[-1], 3))
+							self.save(filename[run_nb])
+							to_delete = [r for r in filename if r not in pareto_runs]
+							for run in to_delete:
+								try:
+									os.remove(filename[run])
+								except OSError:
+									print('Warning : Previous model could not be deleted')
+								del filename[run]
 
 					if early_stopping is not None:
-						if early_stopping(epochs, val_costs):
-							return (max(val_costs), time()-start_time, filename)
+						# Stop if early stopping is triggered for all the validation metrics
+						if all([early_stopping(epochs, metrics[m]) for m in validation_metrics]):
+							break
 
 
 				# Compute next checkpoint
@@ -217,16 +230,45 @@ class LTM(object):
 				else:
 					next_save += min(max_progress_interval, next_save * (progress - 1))
 
-	def _print_progress(self, iterations, epochs, start_time, val_costs):
+	def get_pareto_front(self, metrics, metrics_names):
+		costs = np.zeros((len(metrics[metrics_names[0]]), len(metrics_names)))
+		for i, m in enumerate(metrics_names):
+			costs[:, i] = np.array(metrics[m]) * self.metrics[m]['direction']
+		is_efficient = np.ones(costs.shape[0], dtype = bool)
+		for i, c in enumerate(costs):
+			if is_efficient[i]:
+				is_efficient[is_efficient] = np.any(costs[is_efficient]>=c, axis=1)
+		return np.where(is_efficient)[0].tolist()
+
+	def _compute_validation_metrics(self, metrics):
+		
+		ev = evaluation.Evaluator(self.dataset, k=10)
+		for sequence, user_id in self.dataset.validation_set(epochs=1):
+			top_k = self.top_k_recommendations(sequence[:len(sequence)//2], user_id=int(user_id))
+			goal = [i[0] for i in sequence[len(sequence)//2:]]
+			ev.add_instance(goal, top_k)
+
+		metrics['recall'].append(ev.average_recall())
+		metrics['sps'].append(ev.sps())
+		metrics['ndcg'].append(ev.average_ndcg())
+		metrics['user_coverage'].append(ev.user_coverage())
+		metrics['item_coverage'].append(ev.item_coverage())
+		metrics['blockbuster_share'].append(ev.blockbuster_share())
+
+		return metrics
+
+	def _print_progress(self, iterations, epochs, start_time, metrics, validation_metrics):
 		'''Print learning progress in terminal
 		'''
 		print(self.name, iterations, "batchs, ", epochs, " epochs in", time() - start_time, "s")
-		print("Last val cost : ", val_costs[-1])
-		print("Mean val cost : ", np.mean(val_costs))
+		for m in self.metrics:
+			print(m, ': ', metrics[m][-1])
+			if m in validation_metrics:
+				print('Best ', m, ': ', max(np.array(metrics[m])*self.metrics[m]['direction'])*self.metrics[m]['direction'])
 		print('-----------------')
 
 		# Print on stderr for easier recording of progress
-		print(iterations, epochs, time() - start_time, "n/a", val_costs[-1], file=sys.stderr)
+		print(iterations, epochs, time() - start_time, 'n/a', ' '.join(map(str, [metrics[m][-1] for m in self.metrics])), file=sys.stderr)
 
 	def save(self, filename):
 		'''Save the word2vec object into a file

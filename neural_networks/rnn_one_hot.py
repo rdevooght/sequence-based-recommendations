@@ -36,11 +36,6 @@ class RNNOneHot(rnn.RNNBase):
 
 	def _prepare_networks(self, n_items):
 		''' Prepares the building blocks of the RNN, but does not compile them:
-		self.l_in : input layer
-		self.l_mask : mask of the input layer
-		self.target : target of the network
-		self.l_out : output of the network
-		self.cost : cost function
 		'''
 	   
 		self.n_items = n_items
@@ -60,9 +55,10 @@ class RNNOneHot(rnn.RNNBase):
 		# l_last_slice = lasagne.layers.SliceLayer(l_recurrent, -1, 1)
 
 		# Theano tensor for the targets
-		self.target = T.ivector('target_output')
-		self.target_popularity = T.fvector('target_popularity')
+		target = T.ivector('target_output')
+		target_popularity = T.fvector('target_popularity')
 		self.exclude = T.fmatrix('excluded_items')
+		self.theano_inputs = [self.l_in.input_var, self.l_mask.input_var, target, target_popularity, self.exclude]
 		
 		
 		# The sliced output is then passed through linear layer to obtain the right output size
@@ -72,7 +68,7 @@ class RNNOneHot(rnn.RNNBase):
 		network_output = lasagne.layers.get_output(self.l_out)
 
 		# loss function
-		self.cost = (T.nnet.categorical_crossentropy(network_output,self.target) / self.target_popularity).mean()
+		self.cost = (T.nnet.categorical_crossentropy(network_output, target) / target_popularity).mean()
 
 		if self.regularization > 0.:
 			self.cost += self.regularization * lasagne.regularization.l2(self.l_out.b)
@@ -82,37 +78,7 @@ class RNNOneHot(rnn.RNNBase):
 			# self.cost -= self.regularization * lasagne.regularization.regularize_layer_params(self.l_out, lasagne.regularization.l1)
 		
 
-	def _compile_train_function(self):
-		''' Compile self.train. 
-		self.train recieves a sequence and a target for every steps of the sequence, 
-		compute error on every steps, update parameter and return global cost (i.e. the error).
-		'''
-		print("Compiling train...")
-		# Compute AdaGrad updates for training
-		all_params = lasagne.layers.get_all_params(self.l_out, trainable=True)
-		updates = self.updater(self.cost, all_params)
-		# Compile network
-		self.train_function = theano.function([self.l_in.input_var, self.l_mask.input_var, self.target, self.target_popularity, self.exclude], self.cost, updates=updates, allow_input_downcast=True, name="Train_function", on_unused_input='ignore')
-		print("Compilation done.")
-
-	def _compile_predict_function(self):
-		''' Compile self.predict, the deterministic rnn that output the prediction at the end of the sequence
-		'''
-		print("Compiling predict...")
-		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
-		self.predict_function = theano.function([self.l_in.input_var, self.l_mask.input_var], deterministic_output, allow_input_downcast=True, name="Predict_function")
-		print("Compilation done.")
-
-	def _compile_test_function(self):
-		''' Compile self.test_function, the deterministic rnn that output the precision@10
-		'''
-		print("Compiling test...")
-		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
-		if self.interactions_are_unique:
-			deterministic_output *= (1 - self.exclude)
-		cost = lasagne.objectives.categorical_accuracy(deterministic_output,self.target, top_k=10).mean(dtype=theano.config.floatX)
-		self.test_function = theano.function([self.l_in.input_var, self.l_mask.input_var, self.target, self.target_popularity, self.exclude], cost, allow_input_downcast=True, name="Test_function", on_unused_input='ignore')
-		print("Compilation done.")
+	
 
 	def _prepare_input(self, sequences):
 		''' Sequences is a list of [user_id, input_sequence, targets]

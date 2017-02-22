@@ -26,6 +26,15 @@ class Evaluator(object):
 		self.instances = []
 		self.dataset = dataset
 		self.k = k
+
+		self.metrics = {'sps': self.short_term_prediction_success,
+			'recall': self.average_recall, 
+			'precision': self.average_precision,
+			'ndcg': self.average_ndcg,
+			'item_coverage': self.item_coverage,
+			'user_coverage': self.user_coverage,
+			'assr': self.assr,
+			'blockbuster_share': self.blockbuster_share}
 	
 	def add_instance(self, goal, predictions):
 		self.instances.append([goal, predictions])
@@ -69,7 +78,7 @@ class Evaluator(object):
 		return ILS / len(self.instances)
 
 
-	def success_in_top_items(self):
+	def blockbuster_share(self):
 		'''Return the percentage of correct long term predictions that are about items in the top 1% of the most popular items.
 		'''
 
@@ -77,6 +86,8 @@ class Evaluator(object):
 		nb_pop_items = self.dataset.n_items // 100
 		pop_items = np.argpartition(-self.dataset.item_popularity, nb_pop_items)[:nb_pop_items]
 
+		if len(correct_predictions) == 0:
+			return 0
 		return len([i for i in correct_predictions if i in pop_items])/len(correct_predictions)
 
 	def average_novelty(self):
@@ -129,7 +140,7 @@ class Evaluator(object):
 
 		return ndcg / len(self.instances)
 
-	def strict_success_percentage(self):
+	def short_term_prediction_success(self):
 		'''Return the percentage of instances for which the first goal was in the predictions
 		'''
 		score = 0
@@ -137,8 +148,11 @@ class Evaluator(object):
 			score += int(goal[0] in prediction[:min(len(prediction), self.k)])
 
 		return score / len(self.instances)
+	
+	def sps(self):
+		return self.short_term_prediction_success()
 
-	def general_success_percentage(self):
+	def user_coverage(self):
 		'''Return the percentage of instances for which at least one of the goals was in the predictions
 		'''
 		score = 0
@@ -170,6 +184,9 @@ class Evaluator(object):
 			correct_predictions.extend(list(set(goal) & set(prediction[:min(len(prediction), self.k)])))
 		return correct_predictions
 
+	def item_coverage(self):
+		return len(set(self.get_correct_predictions()))
+
 	def get_correct_strict_predictions(self):
 		'''Return a concatenation of the strictly correct predictions of each instances (i.e. predicted the first goal)
 		'''
@@ -188,6 +205,16 @@ class Evaluator(object):
 
 		return all_positions
 
+	def assr(self):
+		'''Returns the average search space reduction.
+		It is defined as the number of items in the dataset divided by the average number of dot products made during testing.
+		'''
+
+		if hasattr(self, 'nb_of_dp') and self.nb_of_dp > 0:
+			return self.dataset.n_items / self.nb_of_dp
+		else:
+			return 1 # If nb_of_dp is not defined, clustering is probably not used, return default assr: 1
+
 class DistributionCharacteristics(object):
 	"""DistributionCharacteristics computes and plot certain characteristics of a list of movies, such as the distribution of popularity.
 	"""
@@ -203,6 +230,19 @@ class DistributionCharacteristics(object):
 		#plt.figure()
 		#plt.loglog(freq_distribution.keys(), freq_distribution.values(), '.')
 		#plt.show()
+
+	def plot_popularity_distribution(self):
+		'''Bar plot of the number of movies in each popularity category
+		'''
+
+		bars = np.zeros(10)
+		for key, val in self.movies.items():
+			popularity_index = OTHER_FEATURES[key, 3] - 1 # minus 1 to shift from 1-based to 0-based counting
+			bars[popularity_index] += val
+
+		# plt.figure()
+		# plt.bar(np.arange(10) + 0.5, bars, width=1)
+		# plt.show() 
 
 	def number_of_movies(self):
 		return len(self.movies)

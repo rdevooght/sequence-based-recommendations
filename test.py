@@ -39,68 +39,62 @@ def save_file_name(predictor, dataset, args):
 		file = re.sub('_ne\*_', '_', dataset.dirname + 'results/' + get_file_name(predictor, args))
 		return file
 
-
-def run_tests(predictor, model_file, dataset, get_full_recommendation_list=False, k=10):
+def run_tests(predictor, model_file, dataset, args, get_full_recommendation_list=False, k=10):
 	# Load model
 	predictor.load(model_file)
 	#predictor.load_last(os.path.dirname(model_file) + '/')
 	# Prepare evaluator
 	evaluator = evaluation.Evaluator(dataset, k=k)
 
-	if get_full_recommendation_list:
+	if get_full_recommendation_list: 
 		k = dataset.n_items
 
 	count = 0
+	nb_of_dp = []
+	start = time.clock()
 	for sequence, user_id in dataset.test_set(epochs=1):
 		count += 1
 		num_viewed = int(len(sequence) / 2)
 		viewed = sequence[:num_viewed]
 		goal = [i[0] for i in sequence[num_viewed:]]
 
-		recommendations = predictor.top_k_recommendations(viewed, user_id=user_id, k=k)
+		if  args.clusters > 0:
+			recommendations, n = predictor.top_k_recommendations(viewed, user_id=user_id, k=k)
+			nb_of_dp.append(n)
+		else:
+			recommendations = predictor.top_k_recommendations(viewed, user_id=user_id, k=k)
 
 		evaluator.add_instance(goal, recommendations)
 
 		if len(goal) == 0:
 			raise ValueError
+	end = time.clock()
+	print('Timer: ', end-start)
+	if len(nb_of_dp) == 0:
+		evaluator.nb_of_dp = dataset.n_items
+	else:
+		evaluator.nb_of_dp = np.mean(nb_of_dp)
 	return evaluator
 
-def print_results(ev, plot=True, file=None, n_batches=None, print_full_rank_comparison=False):
-	print('Average precision: ', ev.average_precision())
-	print('Average recall: ', ev.average_recall())
-	print('Average ndcg: ', ev.average_ndcg())
-	print('Percentage of strict success: ', ev.strict_success_percentage())
+def print_results(ev, metrics, plot=True, file=None, n_batches=None, print_full_rank_comparison=False):
+	
+	for m in metrics:
+		if m not in ev.metrics:
+			raise ValueError('Unkown metric: ' + m)
 
-	goalDistrib = evaluation.DistributionCharacteristics(ev.get_all_goals())
-	strictGoalDistrib = evaluation.DistributionCharacteristics(ev.get_strict_goals())
-	predictionsDistrib = evaluation.DistributionCharacteristics(ev.get_all_predictions())
-	successDistrib = evaluation.DistributionCharacteristics(ev.get_correct_predictions())
-	strictSuccessDistrib = evaluation.DistributionCharacteristics(ev.get_correct_strict_predictions())
-
-	# goalDistrib.plot_frequency_distribution()
-	# predictionsDistrib.plot_frequency_distribution()
-	# successDistrib.plot_frequency_distribution()
-	print('movies correctly recommended : ', successDistrib.number_of_movies())
-	print('movies correctly recommended (strict) : ', strictSuccessDistrib.number_of_movies())
-
-	# if plot:
-	# 	goalDistrib.plot_popularity_distribution()
-	# 	predictionsDistrib.plot_popularity_distribution()
-	# 	successDistrib.plot_popularity_distribution()
+		print(m+'@'+str(ev.k)+': ', ev.metrics[m]())
 
 	if file != None:
 		if not os.path.exists(os.path.dirname(file)):
 			os.makedirs(os.path.dirname(file))
 		with open(file, "a") as f:
-			f.write("\t".join(map(str, [n_batches, ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), successDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.success_in_top_items()])) + "\n")
-			# f.write("\t".join(map(str, [n_batches, ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), goalDistrib.number_of_movies(), predictionsDistrib.number_of_movies(), successDistrib.number_of_movies(), strictGoalDistrib.number_of_movies(), strictSuccessDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.average_novelty(), ev.success_in_top_items()])) + "\n")
+			f.write(str(n_batches)+"\t".join(map(str, [ev.metrics[m]() for m in metrics])) + "\n")
 		if print_full_rank_comparison:
 			with open(file+"_full_rank", "a") as f:
 				for data in ev.get_rank_comparison():
 					f.write("\t".join(map(str, data)) + "\n")
 	else:
-		print("\t".join(map(str, ['-', ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), successDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.success_in_top_items()])), file=sys.stderr)
-		# print("\t".join(map(str, ['-', ev.average_precision(), ev.strict_success_percentage(), ev.general_success_percentage(), goalDistrib.number_of_movies(), predictionsDistrib.number_of_movies(), successDistrib.number_of_movies(), strictGoalDistrib.number_of_movies(), strictSuccessDistrib.number_of_movies(), ev.average_recall(), ev.average_ndcg(), ev.average_novelty(), ev.success_in_top_items()])), file=sys.stderr)
+		print("-\t" + "\t".join(map(str, [ev.metrics[m]() for m in metrics])), file=sys.stderr)
 		if print_full_rank_comparison:
 			with open(file+"_full_rank", "a") as f:
 				for data in ev.get_rank_comparison():
@@ -128,6 +122,7 @@ def test_command_parser(parser):
 	parser.add_argument('-d', dest='dataset', help='Directory name of the dataset.', default='', type=str)
 	parser.add_argument('-i', dest='number_of_batches', help='Number of epochs, if not set it will compare all the available models', default=-1, type=int)
 	parser.add_argument('-k', dest='nb_of_predictions', help='Number of predictions to make. It is the "k" in "prec@k", "rec@k", etc.', default=10, type=int)
+	parser.add_argument('--metrics', help='List of metrics to compute, comma separated', default='sps,recall,item_coverage,user_coverage,blockbuster_share,assr', type=str)
 	parser.add_argument('--save', help='Save results to a file', action='store_true')
 	parser.add_argument('--dir', help='Model directory.', default="", type=str)
 	parser.add_argument('--save_rank', help='Save the full comparison of goal and prediction ranking.', action='store_true')
@@ -157,13 +152,13 @@ def main():
 		file = file[sorted_ids]
 		for i, f in enumerate(file):
 			if batches[i] > last_tested_batch:
-				evaluator = run_tests(predictor, f, dataset, get_full_recommendation_list=args.save_rank, k=args.nb_of_predictions)
+				evaluator = run_tests(predictor, f, dataset, args, get_full_recommendation_list=args.save_rank, k=args.nb_of_predictions)
 				print('-------------------')
 				print('(',i+1 ,'/', len(file),') results on ' + f)
-				print_results(evaluator, plot=False, file=output_file, n_batches=batches[i], print_full_rank_comparison=args.save_rank)
+				print_results(evaluator, args.metrics.split(','), plot=False, file=output_file, n_batches=batches[i], print_full_rank_comparison=args.save_rank)
 	else:
-		evaluator = run_tests(predictor, file, dataset, get_full_recommendation_list=args.save_rank, k=args.nb_of_predictions)
-		print_results(evaluator, file=save_file_name(predictor, dataset, args), print_full_rank_comparison=args.save_rank)
+		evaluator = run_tests(predictor, file, dataset, args, get_full_recommendation_list=args.save_rank, k=args.nb_of_predictions)
+		print_results(evaluator, args.metrics.split(','), file=save_file_name(predictor, dataset, args), print_full_rank_comparison=args.save_rank)
 
 if __name__ == '__main__':
     main()

@@ -15,6 +15,7 @@ from sequence_noise import SequenceNoise
 from update_manager import Adagrad
 from recurrent_layers import RecurrentLayers
 from target_selection import SelectTargets
+from helpers import evaluation
 
 #Lasagne Seed for Reproducibility
 #lasagne.random.set_rng(np.random.RandomState(1))
@@ -94,6 +95,13 @@ class RNNBase(object):
 
 		self.name = "RNN base"
 
+		self.metrics = {'recall': {'direction': 1},
+			'sps': {'direction': 1},
+			'user_coverage' : {'direction': 1},
+			'item_coverage' : {'direction': 1},
+			'ndcg' : {'direction': 1},
+			'blockbuster_share' : {'direction': -1}
+		}
 
 	def prepare_model(self, dataset):
 		'''Must be called before using train, load or top_k_recommendations
@@ -150,6 +158,60 @@ class RNNBase(object):
 		# find top k according to output
 		return list(np.argpartition(-output, range(k))[:k])
 	
+	def set_dataset(self, dataset):
+		self.dataset = dataset
+		self.target_selection.set_dataset(dataset)
+
+	def get_pareto_front(self, metrics, metrics_names):
+		costs = np.zeros((len(metrics[metrics_names[0]]), len(metrics_names)))
+		for i, m in enumerate(metrics_names):
+			costs[:, i] = np.array(metrics[m]) * self.metrics[m]['direction']
+		is_efficient = np.ones(costs.shape[0], dtype = bool)
+		for i, c in enumerate(costs):
+			if is_efficient[i]:
+				is_efficient[is_efficient] = np.any(costs[is_efficient]>=c, axis=1)
+		return np.where(is_efficient)[0].tolist()
+
+	def _compile_train_function(self):
+		''' Compile self.train. 
+		self.train recieves a sequence and a target for every steps of the sequence, 
+		compute error on every steps, update parameter and return global cost (i.e. the error).
+		'''
+		print("Compiling train...")
+		# Compute AdaGrad updates for training
+		all_params = lasagne.layers.get_all_params(self.l_out, trainable=True)
+		updates = self.updater(self.cost, all_params)
+		# Compile network
+		self.train_function = theano.function(self.theano_inputs, self.cost, updates=updates, allow_input_downcast=True, name="Train_function", on_unused_input='ignore')
+		print("Compilation done.")
+
+	def _compile_predict_function(self):
+		''' Compile self.predict, the deterministic rnn that output the prediction at the end of the sequence
+		'''
+		print("Compiling predict...")
+		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
+		self.predict_function = theano.function([self.l_in.input_var, self.l_mask.input_var], deterministic_output, allow_input_downcast=True, name="Predict_function")
+		print("Compilation done.")
+
+	def _compile_test_function(self):
+		''' Compile self.test_function, the deterministic rnn that output the k best scoring items
+		'''
+		print("Compiling test...")
+		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
+		if self.interactions_are_unique:
+			deterministic_output *= (1 - self.exclude)
+		theano_test_function = theano.function(self.theano_inputs, deterministic_output, allow_input_downcast=True, name="Test_function", on_unused_input='ignore')
+		
+		def precision_test_function(theano_inputs, k=10):
+			output = theano_test_function(*theano_inputs)
+			ids = np.argpartition(-output, range(k), axis=-1)[0, :k]
+			
+			return ids
+
+		self.test_function = precision_test_function
+
+		print("Compilation done.")
+
 	def train(self, dataset, 
 		max_time=np.inf, 
 		progress=2.0, 
@@ -160,126 +222,128 @@ class RNNBase(object):
 		max_iter=np.inf, 
 		max_progress_interval=np.inf,
 		load_last_model=False,
-		early_stopping=None):
+		early_stopping=None,
+		validation_metrics=['sps']):
 		'''Train the model based on the sequence given by the training_set
-
+ 
 		max_time is used to set the maximumn amount of time (in seconds) that the training can last before being stop.
 			By default, max_time=np.inf, which means that the training will last until the training_set runs out, or the user interrupt the program.
-		
+		 
 		progress is used to set when progress information should be printed during training. It can be either an int or a float:
 			integer : print at linear intervals specified by the value of progress (i.e. : progress, 2*progress, 3*progress, ...)
 			float : print at geometric intervals specified by the value of progress (i.e. : progress, progress^2, progress^3, ...)
-
+ 
 		max_progress_interval can be used to have geometric intervals in the begining then switch to linear intervals. 
 			It ensures, independently of the progress parameter, that progress is shown at least every max_progress_interval.
-
+ 
 		time_based_progress is used to choose between using number of iterations or time as a progress indicator. True means time (in seconds) is used, False means number of iterations.
-
+ 
 		autosave is used to set whether the model should be saved during training. It can take several values:
 			All : the model will be saved each time progress info is printed.
 			Best : save only the best model so far
 			None : does not save
-
+ 
 		min_iterations is used to set a minimum of iterations before printing the first information (and saving the model).
-
+ 
 		save_dir is the path to the directory where models are saved.
-
+ 
 		load_last_model: if true, find the latest model in the directory where models should be saved, and load it before starting training.
-
+ 
 		early_stopping : should be a callable that will recieve the list of validation error and the corresponding epochs and return a boolean indicating whether the learning should stop.
 		'''
-
-		self.dataset = dataset
-		self.target_selection.set_dataset(dataset)
+ 
+		self.set_dataset(dataset)
 		
+		if len(set(validation_metrics) & set(self.metrics.keys())) < len(validation_metrics):
+			raise ValueError('Incorrect validation metrics. Metrics must be chosen among: ' + ', '.join(self.metrics.keys()))
+
 		# Compile network if needed
 		if not hasattr(self, 'train_function'):
 			self._compile_train_function()
 		if not hasattr(self, 'test_function'):
 			self._compile_test_function()
-
+ 
 		# Load last model if needed
 		iterations = 0
 		epochs_offset = 0
 		if load_last_model:
 			epochs_offset = self.load_last(save_dir)
-		
+		 
 		# Make batch generator
 		#batch_generator = threaded_generator(self._gen_mini_batch(self.sequence_noise(dataset.training_set())))
 		batch_generator = self._gen_mini_batch(self.sequence_noise(dataset.training_set()))
-
+ 
 		start_time = time()
 		next_save = int(progress)
-		val_costs = []
 		train_costs = []
 		current_train_cost = []
 		epochs = []
-
+		metrics = {name:[] for name in self.metrics.keys()}
+		filename = {}
+ 
 		try: 
 			while (time() - start_time < max_time and iterations < max_iter):
-
+ 
 				# Train with a new batch
 				try:
 					batch = next(batch_generator)
 					cost = self.train_function(*batch)
 					if np.isnan(cost):
 						raise ValueError("Cost is NaN")
-					
+					 
 				except StopIteration:
 					break
-
+ 
 				current_train_cost.append(cost)
-
+ 
 				# Check if it is time to save the model
 				iterations += 1
-
+ 
 				if time_based_progress:
 					progress_indicator = int(time() - start_time)
 				else:
 					progress_indicator = iterations
-
+ 
 				if progress_indicator >= next_save:
-
+ 
 					if progress_indicator >= min_iterations:
-
+ 
 						# Save current epoch
 						epochs.append(epochs_offset + dataset.training_set.epochs)
-
+ 
 						# Average train cost
 						train_costs.append(np.mean(current_train_cost))
 						current_train_cost = []
-
+ 
 						# Compute validation cost
-						costs = []
-						for batch in self._gen_mini_batch(dataset.validation_set(epochs=1), test=True):
-							costs.append(self.test_function(*batch))
-						last_cost = np.mean(costs)
-						val_costs.append(last_cost)
-
+						metrics = self._compute_validation_metrics(metrics)
+							
 						# Print info
-						self._print_progress(iterations, epochs[-1], start_time, val_costs, train_costs)
+						self._print_progress(iterations, epochs[-1], start_time, train_costs, metrics, validation_metrics)
 
 						# Save model
+						run_nb = len(metrics[self.metrics.keys()[0]])-1
 						if autosave == 'All':
-							filename = save_dir + self._get_model_filename(round(epochs[-1], 3))
-							self.save(filename)
+							filename[run_nb] = save_dir + self._get_model_filename(round(epochs[-1], 3))
+							self.save(filename[run_nb])
 						elif autosave == 'Best':
-							if len(val_costs) == 1:
-								filename = save_dir + self._get_model_filename(round(epochs[-1], 3))
-								self.save(filename)
-							elif val_costs[-1] > max(val_costs[:-1]):
-								try:
-									os.remove(filename)
-								except OSError:
-									print('Warning : Previous model could not be deleted')
-								filename = save_dir + self._get_model_filename(round(epochs[-1], 3))
-								self.save(filename)
+							pareto_runs = self.get_pareto_front(metrics, validation_metrics)
+							if run_nb in pareto_runs:
+								filename[run_nb] = save_dir + self._get_model_filename(round(epochs[-1], 3))
+								self.save(filename[run_nb])
+								to_delete = [r for r in filename if r not in pareto_runs]
+								for run in to_delete:
+									try:
+										os.remove(filename[run])
+									except OSError:
+										print('Warning : Previous model could not be deleted')
+									del filename[run]
 
 						if early_stopping is not None:
-							if early_stopping(epochs, val_costs):
-								break
-
-
+							# Stop if early stopping is triggered for all the validation metrics
+							if all([early_stopping(epochs, metrics[m]) for m in validation_metrics]):
+								break 
+ 
 					# Compute next checkpoint
 					if isinstance(progress, int):
 						next_save += min(progress, max_progress_interval)
@@ -287,8 +351,24 @@ class RNNBase(object):
 						next_save += min(max_progress_interval, next_save * (progress - 1))
 		except KeyboardInterrupt:
 			print('Training interrupted')
-		
-		return (max(val_costs), time()-start_time, filename)
+		 
+		best_run = np.argmax(np.array(metrics[validation_metrics[0]]) * self.metrics[validation_metrics[0]]['direction'])
+		return ({m: metrics[m][best_run] for m in self.metrics.keys()}, time()-start_time, filename[best_run])
+
+	def _compute_validation_metrics(self, metrics):
+		ev = evaluation.Evaluator(self.dataset, k=10)
+		for batch_input, goal in self._gen_mini_batch(self.dataset.validation_set(epochs=1), test=True):
+			predictions = self.test_function(batch_input)
+			ev.add_instance(goal, predictions)
+
+		metrics['recall'].append(ev.average_recall())
+		metrics['sps'].append(ev.sps())
+		metrics['ndcg'].append(ev.average_ndcg())
+		metrics['user_coverage'].append(ev.user_coverage())
+		metrics['item_coverage'].append(ev.item_coverage())
+		metrics['blockbuster_share'].append(ev.blockbuster_share())
+
+		return metrics
 
 	def _gen_mini_batch(self, sequence_generator, test=False, max_reuse_sequence=np.inf):
 		''' Takes a sequence generator and produce a mini batch generator.
@@ -310,13 +390,16 @@ class RNNBase(object):
 
 			j = 0
 			sequences = []
-			while j < self.batch_size:
+			batch_size = self.batch_size
+			if test:
+				batch_size = 1
+			while j < batch_size:
 
 				sequence, user_id = next(sequence_generator)
 
 				# finds the lengths of the different subsequences
 				if not test:
-					seq_lengths = sorted(random.sample(xrange(2, len(sequence)), min([self.batch_size - j, len(sequence) - 2, max_reuse_sequence])))
+					seq_lengths = sorted(random.sample(xrange(2, len(sequence)), min([batch_size - j, len(sequence) - 2, max_reuse_sequence])))
 				else:
 					seq_lengths = [int(len(sequence) / 2)] 
 
@@ -331,19 +414,25 @@ class RNNBase(object):
 
 				j += len(seq_lengths) - skipped_seq
 
-			yield self._prepare_input(sequences)
+			if test:
+				yield self._prepare_input(sequences), [i[0] for i in sequence[seq_lengths[0]:]]
+			else:
+				yield self._prepare_input(sequences)
 
-	def _print_progress(self, iterations, epochs, start_time, val_costs, train_costs):
+	def _print_progress(self, iterations, epochs, start_time, train_costs, metrics, validation_metrics):
 		'''Print learning progress in terminal
 		'''
 		print(self.name, iterations, "batchs, ", epochs, " epochs in", time() - start_time, "s")
 		print("Last train cost : ", train_costs[-1])
-		print("Last val cost : ", val_costs[-1])
-		print("Mean val cost : ", np.mean(val_costs))
+		for m in self.metrics:
+			print(m, ': ', metrics[m][-1])
+			if m in validation_metrics:
+				print('Best ', m, ': ', max(np.array(metrics[m])*self.metrics[m]['direction'])*self.metrics[m]['direction'])
 		print('-----------------')
 
 		# Print on stderr for easier recording of progress
-		print(iterations, epochs, time() - start_time, train_costs[-1], val_costs[-1], file=sys.stderr)
+		print(iterations, epochs, time() - start_time, train_costs[-1], ' '.join(map(str, [metrics[m][-1] for m in self.metrics])), file=sys.stderr)
+
 
 	def _get_model_filename(self, iterations):
 		'''Return the name of the file to save the current model

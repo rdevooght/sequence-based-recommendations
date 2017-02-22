@@ -20,16 +20,16 @@ class SelectTargets(object):
 		self.bias = bias
 		self.determinist_test = determinist_test
 
-		self._set_name()
-
-	def _set_name(self):
+	@property
+	def name(self):
 		
-		self.name = "nt"+str(self.n_targets)
+		name = "nt"+str(self.n_targets)
 
 		if self.bias >= 0.:
-			self.name += '_tb'+str(self.bias)
+			name += '_tb'+str(self.bias)
 		if self.shuffle:
-			self.name += "_shufT"
+			name += "_shufT"
+		return name
 			
 
 	def set_dataset(self, dataset):

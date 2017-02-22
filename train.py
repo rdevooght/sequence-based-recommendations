@@ -17,6 +17,7 @@ def training_command_parser(parser):
 	parser.add_argument('-d', dest='dataset', help='Directory name of the dataset.', default='', type=str)
 	parser.add_argument('--dir', help='Directory name to save model.', default='', type=str)
 	parser.add_argument('--save', choices=['All', 'Best', 'None'], help='Policy for saving models.', default='Best')
+	parser.add_argument('--metrics', help='Metrics for validation, comma separated', default='sps', type=str)
 	parser.add_argument('--time_based_progress', help='Follow progress based on time rather than iterations.', action='store_true')
 	parser.add_argument('--load_last_model', help='Load Last model before starting training.', action='store_true')
 	parser.add_argument('--progress', help='Progress intervals', default='2.', type=str)
@@ -52,7 +53,8 @@ def main():
 		min_iterations=args.min_iter,
 		max_time=args.max_time,
 		early_stopping=parse.get_early_stopper(args),
-		load_last_model=args.load_last_model)
+		load_last_model=args.load_last_model,
+		validation_metrics=args.metrics.split(','))
 
 if __name__ == '__main__':
     main()

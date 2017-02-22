@@ -6,7 +6,7 @@ import random
 import os.path
 
 # Data directory
-DEFAULT_DIR = 'data/'
+DEFAULT_DIR = '../../data/'
 
 
 class DataHandler(object):
@@ -99,7 +99,7 @@ class DataHandler(object):
 			if self.extended_training_set:
 				#Those values are unfortunately inexact
 				self.training_set.n_users, self.training_set.n_items = self.n_users, self.n_items
-				self.training_set.n_interactions += (self.validation_set.n_interactions + self.test_set.n_interactions)/2
+				self.training_set.n_interactions += (self.validation_set.n_interactions + self.test_set.n_interactions)//2
 
 class SequenceGenerator(object):
 	"""docstring for SequenceGenerator"""

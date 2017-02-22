@@ -6,6 +6,7 @@ import theano.tensor as T
 import lasagne
 import cPickle
 import random
+from bisect import bisect
 from time import time
 import rnn_base as rnn
 from sparse_lstm import *
@@ -14,7 +15,7 @@ class RNNSampling(rnn.RNNBase):
 	"""RNNSampling have a loss function that uses a sampling procedure.
 	BPR or TOP1
 	"""
-	def __init__(self, loss_function="Blackout", sampling=32, last_layer_tanh=False, last_layer_init=1., diversity_bias=0.0, **kwargs):
+	def __init__(self, loss_function="Blackout", sampling=32, last_layer_tanh=False, last_layer_init=1., diversity_bias=0.0, sampling_bias=0., **kwargs):
 		'''
 		Parameters
 		----------
@@ -27,6 +28,8 @@ class RNNSampling(rnn.RNNBase):
 		sampling: integer > 0 or float in (0,1)
 			Number of items to sample in the computation of the loss function.
 			If sampling is a float in (0,1), it is interpreted as the fraction of items to use.
+		sampling_bias: float
+			Items are sampled with a probability proportional to their frequency to the power of the sampling_bias.
 
 		'''
 		super(RNNSampling, self).__init__(**kwargs)
@@ -35,6 +38,7 @@ class RNNSampling(rnn.RNNBase):
 		self.last_layer_tanh =last_layer_tanh
 		self.diversity_bias = diversity_bias
 		self.sampling = sampling
+		self.sampling_bias = sampling_bias
 		if loss_function is None:
 			loss_function = "Blackout"
 		self.loss_function_name = loss_function
@@ -55,7 +59,10 @@ class RNNSampling(rnn.RNNBase):
 	def _get_model_filename(self, epochs):
 		'''Return the name of the file to save the current model
 		'''
-		filename = "rnn_sampling_"+self.loss_function_name+"_s"+str(self.sampling)+"_ini"+str(self.last_layer_init)+"_db"+str(self.diversity_bias)
+		filename = "rnn_sampling_"+self.loss_function_name+"_"
+		if self.sampling_bias > 0.:
+			filename += "p" + str(self.sampling_bias)
+		filename += "s"+str(self.sampling)+"_ini"+str(self.last_layer_init)+"_db"+str(self.diversity_bias)
 		return filename + "_" + self._common_filename(epochs)
 
 	def _blackout_loss(self, predictions, targets):
@@ -93,6 +100,10 @@ class RNNSampling(rnn.RNNBase):
 		'''
 
 		self.n_items = n_items
+		if self.sampling < 1:
+			self.effective_sampling = int(self.sampling * self.n_items)
+		else:
+			self.effective_sampling = int(self.sampling)
 		
 		# The input is composed of to parts : the on-hot encoding of the movie, and the features of the movie
 		self.l_in = lasagne.layers.InputLayer(shape=(self.batch_size, self.max_length, self._input_size()))
@@ -110,51 +121,46 @@ class RNNSampling(rnn.RNNBase):
 		# l_last_slice = lasagne.layers.SliceLayer(l_recurrent, -1, 1)
 
 		# Theano tensor for the targets
-		self.target = T.ivector('target_output')
+		target = T.ivector('target_output')
+		samples = T.ivector('samples')
 		self.exclude = T.fmatrix('excluded_items')
-		self.target_popularity = T.fvector('target_popularity')
+		target_popularity = T.fvector('target_popularity')
+		self.theano_inputs = [self.l_in.input_var, self.l_mask.input_var, target, samples, target_popularity, self.exclude]
 		
 		# The sliced output is then passed through linear layer to obtain the right output size
 		self.l_out = BlackoutLayer(l_last_slice, num_units=self.n_items, num_outputs=self.sampling, nonlinearity=None, W=lasagne.init.GlorotUniform(gain=self.last_layer_init))
 
 		# lasagne.layers.get_output produces a variable for the output of the net
-		network_output = lasagne.layers.get_output(self.l_out, targets = self.target)
+		network_output = lasagne.layers.get_output(self.l_out, targets = target, samples=samples)
 
 		# loss function
-		self.cost = (self.loss_function(network_output,np.arange(self.batch_size)) / self.target_popularity).mean()
+		self.cost = (self.loss_function(network_output,np.arange(self.batch_size)) / target_popularity).mean()
 		
 
-	def _compile_train_function(self):
-		''' Compile self.train. 
-		self.train recieves a sequence and a target for every steps of the sequence, 
-		compute error on every steps, update parameter and return global cost (i.e. the error).
-		'''
-		print("Compiling train...")
-		# Compute AdaGrad updates for training
-		all_params = lasagne.layers.get_all_params(self.l_out, trainable=True)
-		updates = self.updater(self.cost, all_params)
-		# Compile network
-		self.train_function = theano.function([self.l_in.input_var, self.l_mask.input_var, self.target, self.target_popularity, self.exclude], self.cost, updates=updates, allow_input_downcast=True, name="Train_function", on_unused_input='ignore')
-		print("Compilation done.")
-
-	def _compile_predict_function(self):
-		''' Compile self.predict, the deterministic rnn that output the prediction at the end of the sequence
-		'''
-		print("Compiling predict...")
-		deterministic_output = lasagne.layers.get_output(self.l_out, deterministic=True)
-		self.predict_function = theano.function([self.l_in.input_var, self.l_mask.input_var], deterministic_output, allow_input_downcast=True, name="Predict_function")
-		print("Compilation done.")
-
 	def _compile_test_function(self):
-		''' Compile self.test_function, the deterministic rnn that output the precision@10
+		''' Differs from base test function because of the added softmax operation
 		'''
 		print("Compiling test...")
 		deterministic_output = T.nnet.softmax(lasagne.layers.get_output(self.l_out, deterministic=True))
 		if self.interactions_are_unique:
 			deterministic_output *= (1 - self.exclude)
-		cost = lasagne.objectives.categorical_accuracy(deterministic_output,self.target, top_k=10).mean(dtype=theano.config.floatX)
-		self.test_function = theano.function([self.l_in.input_var, self.l_mask.input_var, self.target, self.target_popularity, self.exclude], cost, allow_input_downcast=True, name="Test_function", on_unused_input='ignore')
+
+		theano_test_function = theano.function(self.theano_inputs, deterministic_output, allow_input_downcast=True, name="Test_function", on_unused_input='ignore')
+		
+		def precision_test_function(theano_inputs, k=10):
+			output = theano_test_function(*theano_inputs)
+			ids = np.argpartition(-output, range(k), axis=-1)[0, :k]
+			
+			return ids
+
+		self.test_function = precision_test_function
 		print("Compilation done.")
+
+	def _popularity_sample(self):
+		if not hasattr(self, '_cumsum'):
+			self._cumsum = np.cumsum(np.power(self.dataset.item_popularity, self.sampling_bias))
+
+		return bisect(self._cumsum, random.uniform(0, self._cumsum[-1]))
 
 	def _prepare_input(self, sequences):
 		''' Sequences is a list of [user_id, input_sequence, targets]
@@ -179,4 +185,10 @@ class RNNSampling(rnn.RNNBase):
 			exclude[i, [j[0] for j in in_seq]] = 1
 			pop[i] = self.dataset.item_popularity[target[0][0]] ** self.diversity_bias
 
-		return (X, mask.astype(theano.config.floatX), Y, pop.astype(theano.config.floatX), exclude)
+		if self.sampling_bias > 0:
+			samples = np.array([self._popularity_sample() for i in range(self.effective_sampling)], dtype='int32')
+		else:
+			samples = np.random.choice(self.n_items, self.effective_sampling).astype('int32')
+
+
+		return (X, mask.astype(theano.config.floatX), Y, samples, pop.astype(theano.config.floatX), exclude)

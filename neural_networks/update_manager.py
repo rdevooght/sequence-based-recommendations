@@ -1,8 +1,8 @@
 import lasagne
 
 def update_manager_command_parser(parser):
-	parser.add_argument('--u_m', dest='update_manager', choices=['adagrad', 'adadelta', 'rmsprop', 'nesterov', 'adam'], help='Update mechanism', default='adagrad')
-	parser.add_argument('--u_l', help='Learning rate', default=0.1, type=float)
+	parser.add_argument('--u_m', dest='update_manager', choices=['adagrad', 'adadelta', 'rmsprop', 'nesterov', 'adam'], help='Update mechanism', default='adam')
+	parser.add_argument('--u_l', help='Learning rate', default=0.001, type=float)
 	parser.add_argument('--u_rho', help='rho parameter for Adadelta and RMSProp (momentum for Nesterov momentum)', default=0.9, type=float)
 	parser.add_argument('--u_b1', help='Beta 1 parameter for Adam', default=0.9, type=float)
 	parser.add_argument('--u_b2', help='Beta 2 parameter for Adam', default=0.999, type=float)
@@ -23,7 +23,7 @@ def get_update_manager(args):
 
 class Adagrad(object):
 
-	def __init__(self, learning_rate=0.01, **kwargs):
+	def __init__(self, learning_rate=0.1, **kwargs):
 		super(Adagrad, self).__init__(**kwargs)
 		
 		self.learning_rate = learning_rate

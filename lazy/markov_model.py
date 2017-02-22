@@ -49,7 +49,7 @@ class MarkovModel(Lazy):
 	def top_k_recommendations(self, sequence, k=10, exclude=None, **kwargs):
 		if exclude is None:
 			exclude = []
-
+		
 		last_item = int(sequence[-1][0])
 		if last_item not in self.previous_recommendations:
 			self.get_all_recommendations(last_item)
