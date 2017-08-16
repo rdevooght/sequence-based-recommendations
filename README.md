@@ -4,18 +4,25 @@ Some standard algorithms that do not use sequence information are also present f
 
 All those algorithms aims to solve the "item recommendation" or "top-N recommendation" problem, which mean that they are not designed to predict ratings values, but only to predict which items are of interest for a given user.
 
-Our code was used to produce the experiments in "[Collaborative Filtering with Recurrent Neural Networks](https://arxiv.org/abs/1608.07400)". 
+Our code was used to produce the experiments in "[Collaborative Filtering with Recurrent Neural Networks](https://arxiv.org/abs/1608.07400)" and "[Long and Short-Term Recommendations with Recurrent
+Neural Networks](http://iridia.ulb.ac.be/~rdevooght/papers/UMAP__Long_and_short_term_with_RNN.pdf)". 
 If you use this code in your research, please cite us:
 ````
-@article{CFwRNN,
-  author    = {Robin Devooght and
-               Hugues Bersini},
-  title     = {Collaborative Filtering with Recurrent Neural Networks},
-  journal   = {CoRR},
-  volume    = {abs/1608.07400},
-  year      = {2016},
-  url       = {http://arxiv.org/abs/1608.07400},
-}
+@inproceedings{Rec_with_RNN,
+ author = {Devooght, Robin and Bersini, Hugues},
+ title = {Long and Short-Term Recommendations with Recurrent Neural Networks},
+ booktitle = {Proceedings of the 25th Conference on User Modeling, Adaptation and Personalization},
+ series = {UMAP '17},
+ year = {2017},
+ isbn = {978-1-4503-4635-1},
+ location = {Bratislava, Slovakia},
+ pages = {13--21},
+ numpages = {9},
+ url = {http://doi.acm.org/10.1145/3079628.3079670},
+ doi = {10.1145/3079628.3079670},
+ acmid = {3079670},
+ publisher = {ACM},
+} 
 ````
 
 ## Installation
