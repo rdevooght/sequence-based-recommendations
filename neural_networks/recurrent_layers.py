@@ -3,6 +3,8 @@ import numpy as np
 import theano
 import theano.tensor as T
 import lasagne
+from lasagne import nonlinearities
+from lasagne.layers.recurrent import Gate
 from sparse_lstm import *
 
 def recurrent_layers_command_parser(parser):
@@ -10,20 +12,37 @@ def recurrent_layers_command_parser(parser):
 	parser.add_argument('--r_l', help="Layers' size, (eg: 100-50-50)", default="50", type=str)
 	parser.add_argument('--r_bi', help='Bidirectional layers.', action='store_true')
 	parser.add_argument('--r_emb', help='Add an embedding layer before the RNN. Takes the size of the embedding as parameter, a size<1 means no embedding layer.', type=int, default=0)
-
+	parser.add_argument('--r_act_h', dest='rec_activation_hidden', choices=['tanh', 'sigmoid', 'selu', 'elu'], help='Activation function for hidden output, only for sparse LSTM', default='tanh')
+	parser.add_argument('--r_act_c', dest='rec_activation_cell', choices=['tanh', 'sigmoid', 'selu', 'elu'], help='Activation function for cell output, only for sparse LSTM', default='tanh')
+	
 def get_recurrent_layers(args):
-	return RecurrentLayers(layer_type=args.recurrent_layer_type, layers=map(int, args.r_l.split('-')), bidirectional=args.r_bi, embedding_size=args.r_emb)
+	return RecurrentLayers(layer_type=args.recurrent_layer_type, layers=map(int, args.r_l.split('-')), bidirectional=args.r_bi, embedding_size=args.r_emb, activation_hidden=args.rec_activation_hidden, activation_cell=args.rec_activation_cell)
 	
 
 class RecurrentLayers(object):
-	def __init__(self, layer_type="LSTM", layers=[32], bidirectional=False, embedding_size=0, grad_clipping=100):
+	def __init__(self, layer_type="LSTM", layers=[32], bidirectional=False, embedding_size=0, grad_clipping=100, activation_hidden="tanh", activation_cell="tanh"):
 		super(RecurrentLayers, self).__init__()
 		self.layer_type = layer_type
 		self.layers = layers
 		self.bidirectional = bidirectional
 		self.embedding_size = embedding_size
 		self.grad_clip=grad_clipping
+		self.act_f_hidden = _get_act_func(activation_hidden)
+		self.act_f_cell = _get_act_func(activation_cell)
 		self.set_name()
+
+
+	def _get_act_func(self, string):
+		if string == "tanh":
+			return nonlinearities.tanh
+		if string == "sigmoid":
+			return nonlinearities.sigmoid
+		if string == "elu":
+			return nonlinearities.elu
+		if string == "selu":
+			return nonlinearities.selu
+		return nonlinearities.tanh
+
 
 	def set_name(self):
 
@@ -89,7 +108,8 @@ class RecurrentLayers(object):
 				raise ValueError('Unknown layer type')
 
 			return layer(input_layer, n_hidden, true_input_size, mask_input=mask_layer, grad_clipping=self.grad_clip,
-				learn_init=True, only_return_final=only_return_final, backwards=backwards)
+				learn_init=True, only_return_final=only_return_final, backwards=backwards
+				, cell=Gate(W_cell=None, nonlinearity=self.act_f_cell), nonlinearity=self.act_f_hidden)
 		else:
 			if self.layer_type == "LSTM":
 				layer = lasagne.layers.LSTMLayer
