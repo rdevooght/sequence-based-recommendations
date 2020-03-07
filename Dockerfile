@@ -18,4 +18,4 @@ run     curl -o ml-1m.zip http://files.grouplens.org/datasets/movielens/ml-1m.zi
 run     unzip ml-1m.zip
 run     rm ml-1m.zip
 
-run     yes | python preprocess.py -f ml-1m/ratings.dat --columns uirt --sep :: --val_size 100 --test_size 100     
+run     yes | python preprocess.py -f ml-1m/ratings.dat --columns uirt --sep :: --val_size 500 --test_size 500    
